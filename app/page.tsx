@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 type OrderStatus = "processing" | "shipped" | "delivered";
 type ContactForm = { name: string; email: string; product: string; phone: string };
 type ApiState = "idle" | "loading" | "success" | "error";
+type CartItem = { id: number; name: string; price: string; emoji: string; qty: number };
 
 /* ─── DATA ─── */
 const slides = [
@@ -81,6 +82,8 @@ export default function StorePage() {
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
   const [cartCount, setCartCount] = useState(0);
   const [added, setAdded] = useState<number | null>(null);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
 
   // API States
   const [contactForm, setContactForm] = useState<ContactForm>({ name: "", email: "", product: "", phone: "" });
@@ -153,34 +156,30 @@ export default function StorePage() {
     }
   };
 
-  // WhatsApp order button — saves order then opens WA
-  const handleWhatsApp = async (p: typeof products[0]) => {
-    handleAdd(p.id);
-    setContactForm(f => ({ ...f, product: p.name }));
 
-    try {
-      await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer: "WhatsApp Lead",
-          product: p.name,
-          price: Number(p.price.replace(/[^0-9]/g, "")),
-          status: "processing" as OrderStatus,
-        }),
-      });
-    } catch { /* silent */ }
-
-    const msg = encodeURIComponent(`Hola! Me interesa: ${p.name} (${p.price})`);
-    window.open(`https://wa.me/5553405555?text=${msg}`, "_blank");
-  };
 
   const filtered = activeCategory === "todos" ? products : products.filter(p => p.category === activeCategory);
-  const handleAdd = (id: number) => {
+  const addToCart = (p: typeof products[0]) => {
+    setCart(prev => {
+      const existing = prev.find(i => i.id === p.id);
+      if (existing) return prev.map(i => i.id === p.id ? { ...i, qty: i.qty + 1 } : i);
+      return [...prev, { id: p.id, name: p.name, price: p.price, emoji: p.emoji, qty: 1 }];
+    });
     setCartCount(c => c + 1);
-    setAdded(id);
+    setAdded(p.id);
     setTimeout(() => setAdded(null), 1200);
   };
+
+  const removeFromCart = (id: number) => {
+    setCart(prev => {
+      const item = prev.find(i => i.id === id);
+      if (item && item.qty > 1) return prev.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i);
+      return prev.filter(i => i.id !== id);
+    });
+    setCartCount(c => Math.max(0, c - 1));
+  };
+
+  const cartTotal = cart.reduce((sum, i) => sum + (Number(i.price.replace(/[^0-9]/g, '')) * i.qty), 0);
 
   const cur = slides[slide];
 
@@ -240,6 +239,65 @@ export default function StorePage() {
           text-transform: uppercase; transition: opacity 0.2s;
         }
         .cart-btn:hover { opacity: 0.85; }
+
+        /* CART DRAWER */
+        .cart-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+          z-index: 999; backdrop-filter: blur(4px);
+        }
+        .cart-drawer {
+          position: fixed; top: 0; right: 0; bottom: 0;
+          width: min(420px, 100vw);
+          background: var(--surface); z-index: 1000;
+          display: flex; flex-direction: column;
+          border-left: 1px solid var(--border);
+          animation: slideIn 0.25s ease;
+        }
+        @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        .cart-header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 24px 28px; border-bottom: 1px solid var(--border);
+        }
+        .cart-header h3 { font-family: var(--font-display); font-size: 18px; font-weight: 800; }
+        .cart-close { background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; transition: color 0.2s; }
+        .cart-close:hover { color: var(--text); }
+        .cart-items { flex: 1; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+        .cart-item {
+          display: flex; align-items: center; gap: 16px;
+          background: var(--bg); border: 1px solid var(--border);
+          padding: 16px; border-radius: 8px;
+        }
+        .cart-item-emoji { font-size: 32px; }
+        .cart-item-info { flex: 1; }
+        .cart-item-name { font-family: var(--font-display); font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+        .cart-item-price { font-size: 16px; color: var(--gold-light); font-family: var(--font-display); }
+        .cart-qty { display: flex; align-items: center; gap: 10px; }
+        .qty-btn {
+          width: 28px; height: 28px; border-radius: 50%;
+          background: var(--surface2); border: 1px solid var(--border);
+          color: var(--text); font-size: 16px; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          transition: all 0.2s;
+        }
+        .qty-btn:hover { border-color: var(--gold); color: var(--gold); }
+        .cart-footer {
+          padding: 24px 28px; border-top: 1px solid var(--border);
+          display: flex; flex-direction: column; gap: 16px;
+        }
+        .cart-total {
+          display: flex; justify-content: space-between; align-items: center;
+        }
+        .cart-total span:first-child { font-size: 14px; color: var(--muted); }
+        .cart-total span:last-child { font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--gold-light); }
+        .cart-wa-btn {
+          background: #25D366; border: none; color: #fff;
+          padding: 16px; font-family: var(--font-display);
+          font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
+          text-transform: uppercase; cursor: pointer;
+          transition: opacity 0.2s;
+        }
+        .cart-wa-btn:hover { opacity: 0.88; }
+        .cart-empty { text-align: center; color: var(--muted); padding: 60px 0; font-size: 14px; }
 
         /* HERO */
         .hero-slider {
@@ -469,7 +527,7 @@ export default function StorePage() {
         <div className="nav-right">
           <button className="nav-icon">🔍</button>
           <button className="nav-icon">♡</button>
-          <button className="cart-btn">🛒 {cartCount > 0 ? `(${cartCount})` : "Carrito"}</button>
+          <button className="cart-btn" onClick={() => setCartOpen(true)}>🛒 {cartCount > 0 ? `(${cartCount})` : "Carrito"}</button>
         </div>
       </nav>
 
@@ -539,8 +597,8 @@ export default function StorePage() {
               <span className="pcard-tag">{p.tag}</span>
               <p className="pcard-name">{p.name}</p>
               <p className="pcard-price">{p.price}</p>
-              <button className={`pcard-btn${added === p.id ? " ok" : ""}`} onClick={() => handleWhatsApp(p)}>
-                {added === p.id ? "✓ Abriendo WA..." : "Pedir por WhatsApp"}
+              <button className={`pcard-btn${added === p.id ? " ok" : ""}`} onClick={() => addToCart(p)}>
+                {added === p.id ? "✓ Agregado" : "Añadir al carrito"}
               </button>
             </div>
           ))}
@@ -717,6 +775,59 @@ export default function StorePage() {
           <a className="cchip" href="mailto:hola@anubis.mx">✉️ Email</a>
         </div>
       </div>
+
+      {/* CART DRAWER */}
+      {cartOpen && (
+        <>
+          <div className="cart-overlay" onClick={() => setCartOpen(false)} />
+          <div className="cart-drawer">
+            <div className="cart-header">
+              <h3>🛒 Tu carrito {cartCount > 0 ? `(${cartCount})` : ""}</h3>
+              <button className="cart-close" onClick={() => setCartOpen(false)}>×</button>
+            </div>
+
+            <div className="cart-items">
+              {cart.length === 0 ? (
+                <p className="cart-empty">Tu carrito está vacío 🛒<br />Agrega productos para continuar.</p>
+              ) : (
+                cart.map(item => (
+                  <div className="cart-item" key={item.id}>
+                    <span className="cart-item-emoji">{item.emoji}</span>
+                    <div className="cart-item-info">
+                      <p className="cart-item-name">{item.name}</p>
+                      <p className="cart-item-price">{item.price}</p>
+                    </div>
+                    <div className="cart-qty">
+                      <button className="qty-btn" onClick={() => removeFromCart(item.id)}>−</button>
+                      <span style={{ fontSize: 14, minWidth: 16, textAlign: "center" }}>{item.qty}</span>
+                      <button className="qty-btn" onClick={() => addToCart(products.find(p => p.id === item.id)!)}>+</button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {cart.length > 0 && (
+              <div className="cart-footer">
+                <div className="cart-total">
+                  <span>Total</span>
+                  <span>${cartTotal.toLocaleString("es-MX")}</span>
+                </div>
+                <button
+                  className="cart-wa-btn"
+                  onClick={() => {
+                    const items = cart.map(i => `• ${i.name} x${i.qty} (${i.price})`).join("\n");
+                    const msg = encodeURIComponent(`Hola! Quiero pedir:\n${items}\n\nTotal: $${cartTotal.toLocaleString("es-MX")}`);
+                    window.open(`https://wa.me/5553405555?text=${msg}`, "_blank");
+                  }}
+                >
+                  💬 Pedir por WhatsApp
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       {/* FOOTER */}
       <footer>
